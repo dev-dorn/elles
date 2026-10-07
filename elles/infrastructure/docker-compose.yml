@@ -1,164 +1,162 @@
-version: '3.9'
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-      services:
-        postgres:
-          image: postgres:15-alpine
-          environment:
-            POSTGRES_USER: admin
-            POSTGRES_PASSWORD: admin
-          ports:
-            - "5432:5432"
-          volumes:
-            - postgres_data:/var/lib/postgresql/data
-          healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U admin"]
-            interval: 5s
-            timeout: 5s
-            retries: 5
+  mongodb:
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-        mongodb:
-          image: mongo:7.0
-          environment:
-            MONGO_INITDB_ROOT_USERNAME: admin
-            MONGO_INITDB_ROOT_PASSWORD: admin
-          ports:
-            - "27017:27017"
-          volumes:
-            - mongo_data:/data/db
-          healthcheck:
-            test: echo 'db.runCommand("ping").ok' | mongosh --quiet
-            interval: 5s
-            timeout: 5s
-            retries: 5
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
-        rabbitmq:
-          image: rabbitmq:3-management-alpine
-          environment:
-            RABBITMQ_DEFAULT_USER: admin
-            RABBITMQ_DEFAULT_PASS: admin
-          ports:
-            - "5672:5672"
-            - "15672:15672"
-          volumes:
-            - rabbitmq_data:/var/lib/rabbitmq
-          healthcheck:
-            test: rabbitmq-diagnostics -q ping
-            interval: 10s
-            timeout: 10s
-            retries: 5
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack_data:/var/lib/localstack
 
-        localstack:
-          image: localstack/localstack:latest
-          ports:
-            - "4566:4566"
-          environment:
-            - SERVICES=s3
-            - DEFAULT_REGION=us-east-1
-          volumes:
-            - localstack_data:/var/lib/localstack
+  catalog-service:
+    build: ../backend/catalog-service
+    ports:
+      - "8001:8000"
+    environment:
+      - ENVIRONMENT=local
+      - MONGO_URI=mongodb://admin:admin@mongodb:27017
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
-catalog-service:
-  build: ../backend/catalog-service
-  ports:
-    - "8001:8000"
-  environment:
-    - ENVIRONMENT=local
-    - MONGO_URI=mongodb://admin:admin@mongodb:27017
-    - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-    - AWS_ENDPOINT_URL=http://localstack:4566
-  depends_on:
-    mongodb:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_healthy
+  order-service:
+    build: ../backend/order-service
+    ports:
+      - "8002:8000"
+    environment:
+      - ENVIRONMENT=local
+      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/order_db
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
-order-service:
-  build: ../backend/order-service
-  ports:
-    - "8002:8000"
-  environment:
-    - ENVIRONMENT=local
-    - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/order_db
-    - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-    - AWS_ENDPOINT_URL=http://localstack:4566
-  depends_on:
-    postgres:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_healthy
+  inventory-service:
+    build: ../backend/inventory-service
+    ports:
+      - "8003:8000"
+    environment:
+      - ENVIRONMENT=local
+      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/inventory_db
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
-inventory-service:
-  build: ../backend/inventory-service
-  ports:
-    - "8003:8000"
-  environment:
-    - ENVIRONMENT=local
-    - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/inventory_db
-    - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-    - AWS_ENDPOINT_URL=http://localstack:4566
-  depends_on:
-    postgres:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_healthy
+  identity-service:
+    build: ../backend/identity-service
+    ports:
+      - "8004:8000"
+    environment:
+      - ENVIRONMENT=local
+      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/identity_db
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
-identity-service:
-  build: ../backend/identity-service
-  ports:
-    - "8004:8000"
-  environment:
-    - ENVIRONMENT=local
-    - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/identity_db
-    - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-    - AWS_ENDPOINT_URL=http://localstack:4566
-  depends_on:
-    postgres:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_healthy
+  payment-service:
+    build: ../backend/payment-service
+    ports:
+      - "8005:8000"
+    environment:
+      - ENVIRONMENT=local
+      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/payment_db
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
-payment-service:
-  build: ../backend/payment-service
-  ports:
-    - "8005:8000"
-  environment:
-    - ENVIRONMENT=local
-    - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/payment_db
-    - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-    - AWS_ENDPOINT_URL=http://localstack:4566
-  depends_on:
-    postgres:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_healthy
+  notification-service:
+    build: ../backend/notification-service
+    ports:
+      - "8006:8000"
+    environment:
+      - ENVIRONMENT=local
+      - MONGO_URI=mongodb://admin:admin@mongodb:27017
+      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
-notification-service:
-  build: ../backend/notification-service
-  ports:
-    - "8006:8000"
-  environment:
-    - ENVIRONMENT=local
-    - MONGO_URI=mongodb://admin:admin@mongodb:27017
-    - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-    - AWS_ENDPOINT_URL=http://localstack:4566
-  depends_on:
-    mongodb:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_healthy
+  nextjs-frontend:
+    build: ../frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_CATALOG_API=http://localhost:8001
+    depends_on:
+      - catalog-service
+      - order-service
 
-        nextjs-frontend:
-          build: ../frontend
-          ports:
-            - "3000:3000"
-          environment:
-            - NEXT_PUBLIC_CATALOG_API=http://localhost:8001
-          depends_on:
-            - catalog-service
-            - order-service
-
-      volumes:
-        postgres_data:
-        mongo_data:
-        rabbitmq_data:
-        localstack_data:
+volumes:
+  postgres_data:
+  mongo_data:
+  rabbitmq_data:
+  localstack_data:
