@@ -18,9 +18,3 @@ class DomainEvent:
             correlation_id=correlation_id,
             **kwargs
         )
-@dataclass(frozen=True)
-class ProductPublishedEvent(DomainEvent):
-    """Emitted when any product goes live"""
-    name: str
-    brand: str
-    category: str

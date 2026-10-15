@@ -11,5 +11,6 @@ A production-grade, distributed e-commerce platform built with FastAPI, Next.js,
 1. Ensure Docker and Node.js are installed.
 2. Run `cd infrastructure && docker-compose up --build`
 3. Access services:
-   - Frontend: http://localhost:3000
    - RabbitMQ UI: http://localhost:15672 (admin/admin)
+
+The frontend is not currently included in the Docker Compose setup.
