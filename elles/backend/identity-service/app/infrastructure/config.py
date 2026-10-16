@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     ENVIRONMENT: str = "local"
@@ -8,7 +8,14 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: str = "test"
     AWS_SECRET_ACCESS_KEY: str = "test"
 
-    class Config:
-        env_file = ".env"
+    JWT_SECRET_KEY: str = "test"
+    JWT_ALGORITHM: str = "HS256"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
 settings = Settings()

@@ -1,3 +1,4 @@
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -24,7 +25,9 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      test:
+        - CMD-SHELL
+        - 'mongosh --quiet -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval ''db.runCommand({ping: 1}).ok'''
       interval: 5s
       timeout: 5s
       retries: 5
@@ -40,7 +43,7 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: rabbitmq-diagnostics -q ping
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -50,8 +53,8 @@ services:
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=s3
-      - DEFAULT_REGION=us-east-1
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
     volumes:
       - localstack_data:/var/lib/localstack
 
@@ -60,10 +63,10 @@ services:
     ports:
       - "8001:8000"
     environment:
-      - ENVIRONMENT=local
-      - MONGO_URI=mongodb://admin:admin@mongodb:27017
-      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-      - AWS_ENDPOINT_URL=http://localstack:4566
+      ENVIRONMENT: local
+      MONGO_URI: mongodb://admin:admin@mongodb:27017/?authSource=admin
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       mongodb:
         condition: service_healthy
@@ -75,10 +78,10 @@ services:
     ports:
       - "8002:8000"
     environment:
-      - ENVIRONMENT=local
-      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/order_db
-      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-      - AWS_ENDPOINT_URL=http://localstack:4566
+      ENVIRONMENT: local
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/order_db
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
@@ -90,10 +93,10 @@ services:
     ports:
       - "8003:8000"
     environment:
-      - ENVIRONMENT=local
-      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/inventory_db
-      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-      - AWS_ENDPOINT_URL=http://localstack:4566
+      ENVIRONMENT: local
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/inventory_db
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,10 +108,10 @@ services:
     ports:
       - "8004:8000"
     environment:
-      - ENVIRONMENT=local
-      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/identity_db
-      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-      - AWS_ENDPOINT_URL=http://localstack:4566
+      ENVIRONMENT: local
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/identity_db
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,10 +123,10 @@ services:
     ports:
       - "8005:8000"
     environment:
-      - ENVIRONMENT=local
-      - POSTGRES_URL=postgresql+asyncpg://admin:admin@postgres:5432/payment_db
-      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-      - AWS_ENDPOINT_URL=http://localstack:4566
+      ENVIRONMENT: local
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/payment_db
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,25 +138,15 @@ services:
     ports:
       - "8006:8000"
     environment:
-      - ENVIRONMENT=local
-      - MONGO_URI=mongodb://admin:admin@mongodb:27017
-      - RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672/
-      - AWS_ENDPOINT_URL=http://localstack:4566
+      ENVIRONMENT: local
+      MONGO_URI: mongodb://admin:admin@mongodb:27017/?authSource=admin
+      RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
+      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
       mongodb:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-
-  nextjs-frontend:
-    build: ../frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_CATALOG_API=http://localhost:8001
-    depends_on:
-      - catalog-service
-      - order-service
 
 volumes:
   postgres_data:
