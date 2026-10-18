@@ -4,6 +4,8 @@
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/elles/backend/catalog-service" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/elles/backend/identity-service" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/elles/backend/notification-service" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/elles/venv/lib/python3.14/site-packages/pip/_vendor" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
     <orderEntry type="jdk" jdkName="~/projects/elles/.venv" jdkType="Python SDK" />
