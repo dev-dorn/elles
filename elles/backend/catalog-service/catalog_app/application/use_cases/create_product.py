@@ -33,7 +33,7 @@ class CreateProductUseCase:
             description=request.description,
             benefits=list(request.benefits),
             how_to_use=list(request.how_to_use),
-            attributes=dict(request.attributes),
+            attributes=request.attributes.model_dump(exclude_none=True),
             variants=variants,
             images=list(request.images),
             status=request.status,
