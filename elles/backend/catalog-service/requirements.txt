@@ -9,3 +9,4 @@ aioboto3==12.3.0
 python-dotenv==1.0.1
 orjson>=3.10
 pymongo>=4.9,<5
+pyjwt>=2.8,<3

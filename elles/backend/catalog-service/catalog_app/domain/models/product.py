@@ -59,6 +59,10 @@ class Product:
         self.status = "published"
         self.updated_at = datetime.now(timezone.utc)
 
+    def archive(self) -> None:
+        self.status = ProductStatus.ARCHIVED.value
+        self.updated_at = datetime.now(timezone.utc)
+
     def add_variant(self, variant: Variant) -> None:
         if any(v.sku == variant.sku for v in self.variants):
             raise DomainException(f"Duplicate SKU: {variant.sku}")
