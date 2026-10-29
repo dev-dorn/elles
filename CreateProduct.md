@@ -1,6 +1,6 @@
 # Catalog Service: Products API
 
-Documents the product endpoints in `catalog-service`: create, list, get, publish and archive, with request and response schemas, validation rules, storage and configuration.
+Documents the product endpoints in `catalog-service`: create, list, get, publish and archive, with authentication, request and response schemas, error codes, storage and configuration.
 
 ## Overview
 
@@ -8,17 +8,55 @@ The catalog models a **product with variants**. A product holds the shared infor
 
 All categories live in **one `products` collection**. Category-specific data goes in `attributes`, validated per category (see below). Stock is **not** stored in the catalog: quantities belong to `inventory-service` and are joined on `sku`.
 
+## Authentication
+
+Write endpoints need an **admin** access token issued by `identity-service` (`POST /api/v1/auth/login`), sent as:
+
+```
+Authorization: Bearer <access_token>
+```
+
+The catalog verifies the token itself; it does not call identity-service. A token is accepted when:
+
+- its signature verifies with `JWT_SECRET_KEY` using the configured algorithm (default `HS256`). The secret must be **identical** in identity-service and catalog-service;
+- it has `exp` (not expired) and `sub` (a UUID);
+- its `role` (or `roles`) claim contains `admin`, compared case-insensitively.
+
+`created_by` on a new product is taken from the token's `sub`. It is never accepted from the request body or a header.
+
+| Situation | Response |
+|---|---|
+| No token on a protected endpoint | `401` `Not authenticated` |
+| Bad signature or missing `exp`/`sub` | `401` `Invalid token` |
+| Expired token | `401` `Token has expired` |
+| `sub` is not a UUID | `401` `Invalid token subject` |
+| Valid token without the admin role | `403` `Admin access required` |
+
+Reading is public, with one restriction: only **published** products are visible without an admin token (see the list and get endpoints).
+
 ## Endpoints
 
-Base path: `/api/v1/products`
+Base path: `/api/v1/products` (local uvicorn: `http://localhost:8005`, Docker: `http://localhost:8001`)
 
-| Method | Path | Purpose | Success | Errors |
+| Method | Path | Access | Purpose | Success |
 |---|---|---|---|---|
-| `POST` | `/` | Create a product (always starts as `draft`) | `201` | `400` rule violation or duplicate slug/SKU, `422` invalid body |
-| `GET` | `/` | List products with filters and pagination | `200` | `422` invalid query |
-| `GET` | `/{slug}` | Get one product by slug | `200` | `404` |
-| `POST` | `/{slug}/publish` | Move a product to `published` | `200` | `404`, `409` publish rule not met |
-| `POST` | `/{slug}/archive` | Move a product to `archived` | `200` | `404` |
+| `POST` | `/` | Admin | Create a product (always starts as `draft`) | `201` |
+| `GET` | `/` | Public (published) / Admin (other statuses) | List with filters and pagination | `200` |
+| `GET` | `/{slug}` | Public (published) / Admin (any) | Get one product | `200` |
+| `POST` | `/{slug}/publish` | Admin | Move to `published` | `200` |
+| `POST` | `/{slug}/archive` | Admin | Move to `archived` | `200` |
+
+### Error responses
+
+| Status | When |
+|---|---|
+| `400` | A domain rule is broken (for example a price of 0 or less) |
+| `401` / `403` | Authentication or authorization failure (see above) |
+| `404` | Unknown slug, or an unpublished product requested without an admin token |
+| `409` | Duplicate slug or SKU on create, or a publish rule not met |
+| `422` | Invalid body or query parameters |
+
+All errors use the shape `{"detail": "..."}`.
 
 ### List products: `GET /`
 
@@ -28,7 +66,7 @@ Query parameters:
 |---|---|---|---|
 | `category` | enum | none | `makeup`, `fragrance`, `skincare`, `haircare`, `bodycare`, `nails`, `tools` |
 | `brand` | string | none | Exact match |
-| `status` | enum | `published` | `draft`, `published` or `archived` |
+| `status` | enum | `published` | `draft`, `published` or `archived`. Anything other than `published` needs an admin token, otherwise `403` |
 | `q` | string | none | 2 to 100 chars. Case-insensitive name search |
 | `min_price` | integer | none | Minor units, 0 or more. Matches if **any** variant is at or above it |
 | `max_price` | integer | none | Minor units, 0 or more. Must not be below `min_price` (otherwise `422`) |
@@ -37,7 +75,7 @@ Query parameters:
 | `page` | integer | `1` | 1 or more |
 | `page_size` | integer | `20` | 1 to 100 |
 
-Results are sorted newest first. Because the default status is `published`, draft and archived products only appear when requested explicitly.
+Results are sorted newest first.
 
 Response:
 
@@ -50,13 +88,13 @@ Response:
       "name": "Velvet Matte Lipstick",
       "brand": "Elles",
       "category": "makeup",
-      "status": "draft",
+      "status": "published",
       "image": null,
       "price_from": { "amount": 185000, "currency": "KES" },
       "variant_count": 1
     }
   ],
-  "total": 4,
+  "total": 1,
   "page": 1,
   "page_size": 20,
   "pages": 1
@@ -67,15 +105,17 @@ Response:
 
 ### Get a product: `GET /{slug}`
 
-Returns the full product: `id`, `slug`, `name`, `brand`, `category`, `description`, `benefits`, `how_to_use`, `attributes`, `variants` (each with `sku`, `shade_name`, `size`, `price`, `images`, `is_active`), `images`, `status`, `created_at` and `updated_at`. An unknown slug returns `404`.
+Returns the full product: `id`, `slug`, `name`, `brand`, `category`, `description`, `benefits`, `how_to_use`, `attributes`, `variants` (each with `sku`, `shade_name`, `size`, `price`, `images`, `is_active`), `images`, `status`, `created_at` and `updated_at`.
+
+A product that is not `published` returns `404` to anyone without an admin token, so unpublished products are not revealed.
 
 ### Publish and archive
 
-`POST /{slug}/publish` applies the domain rule: the product needs a name, a slug and at least one active variant. If the rule fails the response is `409 Conflict` with the reason. `POST /{slug}/archive` moves the product to `archived`. Both return the full product. Archived products keep their slug and SKUs reserved.
+`POST /{slug}/publish` applies the domain rule: the product needs a name, a slug and at least one active variant. If the rule fails the response is `409 Conflict` with the reason. `POST /{slug}/archive` moves the product to `archived`. Both return the full product and need an admin token. An archived product can be published again directly. Archived products keep their slug and SKUs reserved.
 
 ### Create a product: `POST /`
 
-The admin ID is currently read from the `X-Admin-Id` header, with a hardcoded fallback. This is a temporary stand-in for the JWT guard (see Known gaps). The response is a short confirmation:
+Needs an admin token. Duplicate slugs or SKUs return `409`. A successful call returns a short confirmation:
 
 ```json
 {
@@ -139,19 +179,24 @@ Fragrance variants must each have a `size`. Adding a category means adding an at
 
 ```json
 {
-  "slug": "velvet-matte-lipstick",
-  "name": "Velvet Matte Lipstick",
+  "slug": "golden-hour-eau-de-parfum",
+  "name": "Golden Hour Eau de Parfum",
   "brand": "Elles",
-  "category": "makeup",
-  "description": "A creamy, long-wearing matte lipstick.",
-  "benefits": ["Long-wearing", "Non-drying"],
-  "how_to_use": ["Apply from the center of the lips outward."],
-  "attributes": { "finish": "matte" },
+  "category": "fragrance",
+  "description": "A warm, sunlit fragrance with citrus, jasmine and soft amber.",
+  "benefits": ["Long-lasting", "Everyday wear"],
+  "how_to_use": ["Spray on pulse points: wrists, neck and behind the ears."],
+  "attributes": {
+    "concentration": "eau-de-parfum",
+    "gender_target": "women",
+    "scent_family": ["floral", "warm"],
+    "notes": { "top": ["bergamot"], "heart": ["jasmine"], "base": ["amber", "musk"] }
+  },
   "variants": [
     {
-      "sku": "ELL-LIP-RUBY",
-      "shade_name": "Ruby",
-      "price": { "amount": 185000, "currency": "KES" },
+      "sku": "ELL-FRG-GH-50",
+      "size": { "value": 50, "unit": "ml" },
+      "price": { "amount": 850000, "currency": "KES" },
       "images": [],
       "is_active": true
     }
@@ -161,10 +206,19 @@ Fragrance variants must each have a `size`. Adding a category means adding an at
 }
 ```
 
+```bash
+curl -X POST http://localhost:8005/api/v1/products/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d @product.json
+```
+
 ## Architecture
 
 ```
-presentation/api/products.py              Routes and error mapping
+presentation/api/products.py              Routes
+presentation/api/security.py              JWT guard: require_admin, optional_admin
+main.py                                   App, lifespan (indexes), exception handlers
 application/dtos/product_dtos.py          Create request models (discriminated union)
 application/dtos/product_responses.py     ProductResponse, ProductSummary, ProductListResponse
 application/use_cases/create_product.py   CreateProductUseCase
@@ -172,9 +226,12 @@ application/use_cases/product_queries.py  ListProductsUseCase, GetProductBySlugU
 application/use_cases/product_status.py   PublishProductUseCase, ArchiveProductUseCase
 application/ports/repositories.py         ProductRepositoryPort, ProductFilters
 domain/models/product.py                  Product, Variant, Price, Size, ProductStatus
+domain/exceptions.py                      DomainException, InvalidPriceError, DuplicateProductError
 infrastructure/persistence/mongodb/       MongoProductRepository, database client
 infrastructure/config.py                  Settings
 ```
+
+Domain exceptions are mapped to HTTP in `main.py`: `DuplicateProductError` returns `409`, and any other `DomainException` (including `InvalidPriceError`) returns `400`. The publish route catches `DomainException` itself and returns `409`, because a failed publish rule is a state conflict.
 
 ## Domain rules
 
@@ -189,7 +246,7 @@ infrastructure/config.py                  Settings
 - Database `catalog_db`, collection `products`.
 - `_id` and `created_by` are stored as string UUIDs.
 - Prices are stored as integers in minor units.
-- Datetimes are timezone-aware (the client is created with `tz_aware=True`).
+- Datetimes are stored in UTC.
 
 Indexes, created at startup by `ensure_indexes()`:
 
@@ -203,17 +260,24 @@ Indexes, created at startup by `ensure_indexes()`:
 | `variants.price.amount` | Price range filter |
 | `attributes.scent_family`, `attributes.skin_types` | Category filters |
 
-The use case checks the slug before saving, but two simultaneous requests could both pass that check. The unique indexes are the real guarantee: the repository catches `DuplicateKeyError` and re-raises it as a domain exception.
+The use case checks the slug before saving, but two simultaneous requests could both pass that check. The unique indexes are the real guarantee: the repository catches `DuplicateKeyError` and raises `DuplicateProductError`, which returns the same `409`. If index creation fails at startup, existing documents contain a duplicate slug or SKU and must be fixed first.
 
 ## Configuration
+
+Set these in `catalog-service/.env` (never commit it):
 
 | Variable | Description | Default |
 |---|---|---|
 | `ENVIRONMENT` | Runtime environment | `local` |
 | `MONGO_URL` | MongoDB connection string | `mongodb://admin:admin@localhost:27017/?authSource=admin` |
 | `MONGODB_DB_NAME` | Database name | `catalog_db` |
+| `JWT_SECRET_KEY` | Secret used to verify tokens. **Required, no default**. Must equal identity-service's value | none |
+| `JWT_ALGORITHM` | Token algorithm | `HS256` |
+| `ADMIN_ROLE` | Role name that grants write access | `admin` |
 
-Settings are case-sensitive, so the variable must be named exactly `MONGO_URL`. In Docker Compose the host is `mongodb`, not `localhost`.
+Settings are case-sensitive, so names must match exactly; unknown variables are ignored. A missing `JWT_SECRET_KEY` stops the app at startup on purpose. Generate a secret with `openssl rand -hex 32`.
+
+In Docker Compose the Mongo host is `mongodb`, not `localhost`, and `JWT_SECRET_KEY` must be passed to both identity-service and catalog-service from `infrastructure/.env`. A `.env` change needs a service restart (uvicorn's reloader only watches Python files); after changing the secret, log in again, because tokens signed with the old one no longer verify.
 
 ## Running and verifying
 
@@ -222,20 +286,34 @@ cd backend/catalog-service
 uvicorn catalog_app.main:app --host 0.0.0.0 --port 8005 --reload
 ```
 
-Open `http://localhost:8005/docs`, create a product, then:
+Get a token, then create, publish and read:
 
 ```bash
-curl "http://localhost:8005/api/v1/products/?status=draft"
-curl -X POST http://localhost:8005/api/v1/products/velvet-matte-lipstick/publish
+TOKEN=$(curl -s -X POST http://localhost:8004/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"<admin email>","password":"<password>"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -X POST http://localhost:8005/api/v1/products/golden-hour-eau-de-parfum/publish \
+  -H "Authorization: Bearer $TOKEN"
+
 curl "http://localhost:8005/api/v1/products/"
 ```
 
-The last call should now return the published product.
+Checks that should hold:
+
+- Create without a token returns `401`; the same slug twice returns `409`.
+- `GET /?status=draft` without a token returns `403`; with an admin token it returns drafts.
+- A draft requested by slug without a token returns `404`.
+- After publishing, the product appears in the public list.
+
+Access tokens are short-lived, so log in again if you get `Token has expired`.
 
 ## Known gaps
 
-- **Auth:** `created_by` comes from an unauthenticated `X-Admin-Id` header with a hardcoded fallback. Create, publish and archive need a JWT admin guard. Non-published listings should be admin-only.
-- **Duplicate slug or SKU on create returns `400`.** Map it to `409` in a global exception handler.
+- Tokens carry a `type` claim that is not checked yet; require `access` so other token types cannot be used here.
+- Set `tz_aware=True` on the Motor client so `created_at` is returned with a `Z` suffix like `updated_at`.
+- The create endpoint returns a short confirmation, not the full `ProductResponse`.
 - No update endpoint (edit name, description, variants) yet.
 - Sorting is newest first only. Price sorting needs a stored minimum price on the product.
-- Automated tests for the filters, the union and the publish rules.
+- Automated tests for the filters, the union, the guard and the publish rules.
