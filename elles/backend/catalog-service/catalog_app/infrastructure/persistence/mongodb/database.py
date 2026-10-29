@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Create the async MongoDB client
-client = AsyncIOMotorClient(settings.MONGODB_URL)
+client = AsyncIOMotorClient(settings.MONGODB_URL, tz_aware=True)
 
 # Get the specific database
 db: AsyncIOMotorDatabase = client[settings.MONGODB_DB_NAME]
