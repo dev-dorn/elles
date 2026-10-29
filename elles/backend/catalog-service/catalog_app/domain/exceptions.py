@@ -5,3 +5,6 @@ class DomainException(Exception):
 class InvalidPriceError(DomainException):
     """Raised when a business rule is violated """
     pass
+class DuplicateProductError(DomainException):
+    """A product wit this slug, or one of its skus , already exists"""
+

@@ -1,9 +1,8 @@
 # catalog_app/presentation/api/products.py
 import math
 from typing import Literal, Optional
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from catalog_app.application.dtos.product_dtos import CreateProductRequest
@@ -16,10 +15,12 @@ from catalog_app.application.dtos.product_responses import (
 from catalog_app.application.ports.repositories import ProductFilters, ProductRepositoryPort
 from catalog_app.application.use_cases.create_product import CreateProductUseCase
 from catalog_app.application.use_cases.product_queries import ListProductsUseCase, GetProductBySlugUseCase
+from catalog_app.application.use_cases.product_status import PublishProductUseCase, ArchiveProductUseCase
 
-from catalog_app.domain.exceptions import DomainException, InvalidPriceError
+from catalog_app.domain.exceptions import DomainException
 from catalog_app.infrastructure.persistence.mongodb.database import get_mongodb_session
 from catalog_app.infrastructure.persistence.mongodb.product_repository import MongoProductRepository
+from catalog_app.presentation.api.security import AdminPrincipal, require_admin, optional_admin
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -32,25 +33,18 @@ def get_product_repo(db: AsyncIOMotorDatabase = Depends(get_mongodb_session)) ->
 async def create_product(
     request: CreateProductRequest,
     repo: ProductRepositoryPort = Depends(get_product_repo),
-    x_admin_id: Optional[UUID] = Header(None, alias="X-Admin-Id"),
+    admin: AdminPrincipal = Depends(require_admin),
 ):
-    if not x_admin_id:
-        x_admin_id = UUID("c86af85a-f58d-4235-b4ad-f2153eb15e69")
+    new_product = await CreateProductUseCase(product_repo=repo).execute(
+        request, created_by=admin.user_id
+    )
+    return {
+        "message": "Product draft created successfully",
+        "product_id": str(new_product.id),
+        "status": new_product.status,
+        "name": new_product.name
+    }
 
-    use_case = CreateProductUseCase(product_repo=repo)
-
-    try:
-        new_product = await use_case.execute(request, created_by=x_admin_id)
-        return {
-            "message": "Product draft created successfully",
-            "product_id": str(new_product.id),
-            "status": new_product.status,
-            "name": new_product.name,
-        }
-    except InvalidPriceError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except DomainException as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/", response_model=ProductListResponse)
@@ -66,7 +60,14 @@ async def list_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     repo: ProductRepositoryPort = Depends(get_product_repo),
+    admin: Optional[AdminPrincipal] = Depends(optional_admin),
+
 ):
+    if status_filter != "published" and admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required for non-published products",
+        )
     if min_price is not None and max_price is not None and min_price > max_price:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -99,3 +100,22 @@ async def get_product(slug: str, repo: ProductRepositoryPort = Depends(get_produ
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return ProductResponse.model_validate(product)
+
+@router.post("/{slug}/publish", response_model=ProductResponse, dependencies=[Depends(require_admin)])
+async def publish_product(slug: str, repo: ProductRepositoryPort = Depends(get_product_repo)):
+    try:
+        product = await PublishProductUseCase(repo).execute(slug)
+    except DomainException as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return ProductResponse.model_validate(product)
+
+@router.post("/{slug}/archive", response_model=ProductResponse, dependencies=[Depends(require_admin)])
+async def archive_product(slug: str, repo: ProductRepositoryPort = Depends(get_product_repo)):
+    product = await ArchiveProductUseCase(repo).execute(slug)
+    if product is None:
+        raise  HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return ProductResponse.model_validate(product)
+
+

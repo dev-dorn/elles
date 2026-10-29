@@ -1,7 +1,7 @@
 from uuid import UUID
 from catalog_app.application.ports.repositories import ProductRepositoryPort
 from catalog_app.application.dtos.product_dtos import CreateProductRequest
-from catalog_app.domain.exceptions import DomainException
+from catalog_app.domain.exceptions import  DuplicateProductError
 from catalog_app.domain.models.product import Product, Variant, Price, Size
 
 
@@ -11,7 +11,7 @@ class CreateProductUseCase:
 
     async def execute(self, request: CreateProductRequest, created_by: UUID) -> Product:
         if await self._product_repo.get_by_slug(request.slug):
-            raise DomainException(f"A product with slug '{request.slug}' already exists.")
+            raise DuplicateProductError(f"A product with slug '{request.slug}' already exists.")
 
         variants = [
             Variant(

@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: str = "test"
     AWS_SECRET_ACCESS_KEY: str = "test"
 
-    JWT_SECRET_KEY: str = "test"
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
 
     model_config = SettingsConfigDict(
