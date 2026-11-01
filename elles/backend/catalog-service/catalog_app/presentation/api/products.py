@@ -70,7 +70,7 @@ async def list_products(
         )
     if min_price is not None and max_price is not None and min_price > max_price:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail="min_price cannot be greater than max_price",
         )
 
@@ -95,10 +95,15 @@ async def list_products(
 
 
 @router.get("/{slug}", response_model=ProductResponse)
-async def get_product(slug: str, repo: ProductRepositoryPort = Depends(get_product_repo)):
+async def get_product(
+        slug: str,
+        repo: ProductRepositoryPort = Depends(get_product_repo),
+        admin: Optional[AdminPrincipal] = Depends(optional_admin),
+
+):
     product = await GetProductBySlugUseCase(repo).execute(slug)
-    if product is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if product is None or (product.status != "published" and admin is None):
+        raise HTTPException(status_code=404, detail="Product not found")
     return ProductResponse.model_validate(product)
 
 @router.post("/{slug}/publish", response_model=ProductResponse, dependencies=[Depends(require_admin)])

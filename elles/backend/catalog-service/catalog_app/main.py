@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import logging
 
-from starlette.responses import JSONResponse
+from fastapi.responses import JSONResponse
 
-from catalog_app.domain.exceptions import DomainException
+from catalog_app.domain.exceptions import DomainException, DuplicateProductError
 from catalog_app.infrastructure.config import settings
 from catalog_app.infrastructure.persistence.mongodb.database import close_mongodb_connection
 from catalog_app.presentation.api import products
@@ -21,6 +21,10 @@ async def lifespan(_app: FastAPI):
     await close_mongodb_connection()
 
 app = FastAPI(title="Catalog Service", version="1.0.0", lifespan=lifespan)
+@app.exception_handler(DuplicateProductError)
+async def duplicate_product_handler(_request: Request, exc: DuplicateProductError):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
 @app.exception_handler(DomainException)
 async def duplicate_product_handler(_request: Request, exc: DomainException):
     return  JSONResponse(status_code=409, content={"detail": str(exc)})
