@@ -13,7 +13,7 @@ class ProductStatus(str, Enum):
 @dataclass
 class Price:
     amount: int
-    currency: str ="Ksh"
+    currency: str ="KES"
 
     def __post_init__(self):
         if self.amount <= 0:

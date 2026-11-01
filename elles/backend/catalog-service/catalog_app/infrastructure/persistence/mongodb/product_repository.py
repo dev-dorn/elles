@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo.errors import DuplicateKeyError
 
 from catalog_app.application.ports.repositories import ProductFilters, ProductRepositoryPort
-from catalog_app.domain.exceptions import DomainException
+from catalog_app.domain.exceptions import DuplicateProductError
 from catalog_app.domain.models.product import Price, Product, Size, Variant
 
 
@@ -119,10 +119,10 @@ class MongoProductRepository(ProductRepositoryPort):
         except DuplicateKeyError as e:
             key = (e.details or {}).get("keyPattern", {})
             if "slug" in key:
-                raise DomainException(f"A product with slug '{product.slug}' already exists.")
+                raise DuplicateProductError(f"A product with slug '{product.slug}' already exists.")
             if "variants.sku" in key:
-                raise DomainException("One or more SKUs already exist on another product.")
-            raise DomainException("Duplicate product data.")
+                raise DuplicateProductError("One or more SKUs already exist on another product.")
+            raise DuplicateProductError("Duplicate product data.")
 
     async def get_by_id(self, product_id: UUID) -> Optional[Product]:
         doc = await self._collection.find_one({"_id": str(product_id)})
