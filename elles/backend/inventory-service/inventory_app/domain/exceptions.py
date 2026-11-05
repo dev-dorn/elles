@@ -15,6 +15,9 @@ class CannotReduceBelowReservedError(InventoryError):
 class InvalidAdjustmentError(InventoryError):
     """Exception raised for items not found in the database."""
 
+class InvalidStockStateError(InventoryError):
+    """Raised when a stock item violates its quantity invariants."""
+
 @dataclass(frozen=True)
 class Shortage:
     sku: str
