@@ -1,6 +1,6 @@
 # Inventory service
 
-This service currently provides the inventory API skeleton, a health endpoint, and JWT authentication and role checks. Stock persistence and operations are tracked in the next inventory milestones.
+This service provides the inventory API skeleton, a health endpoint, JWT authentication and role checks, and foundational stock item persistence. Stock adjustments, movement ledger APIs, and reservations are tracked in later inventory milestones.
 
 ## Run the service
 
@@ -45,7 +45,31 @@ alembic upgrade head
 alembic downgrade base
 ```
 
-The initial revision is intentionally empty. `upgrade head` records the Alembic baseline in `alembic_version`; inventory tables will be introduced by a later migration.
+The initial revision is intentionally empty. Revision `0002_stock_items` creates `stock_items` with database checks for nonnegative `on_hand` and `reserved`, and for `reserved <= on_hand`. `alembic downgrade base` drops `stock_items` and removes the baseline revision.
+
+## Stock item model and repository
+
+`StockItem` represents one SKU with `on_hand`, `reserved`, and `updated_at`. Its `available` property is computed as `on_hand - reserved`. The domain model rejects blank SKUs, negative quantities, and reservations greater than on-hand stock.
+
+The PostgreSQL `stock_items` table stores `sku` as its primary key. Check constraints enforce the quantity invariants in the database too, so invalid stock cannot be persisted even when a write bypasses domain validation.
+
+`PostgresStockRepository` provides two read operations:
+
+- `get_stock(sku)` returns the matching domain object or `None`.
+- `get_stock_many(skus)` returns a mapping keyed by matching SKU. Missing SKUs are omitted, duplicate inputs are collapsed, and an empty input returns an empty mapping.
+
+The repository contract tests run the same read cases against an in-memory fake and PostgreSQL. Additional PostgreSQL cases verify that the database rejects invalid quantities. The tests were run against the separate `inventory_test_db` database.
+
+## Repository contract tests
+
+Install development dependencies with `pip install -r requirements-dev.txt`, then run the repository tests. The same read tests run against the in-memory fake and PostgreSQL. PostgreSQL cases are enabled by setting `INVENTORY_TEST_POSTGRES_URL` to a dedicated test database URL. The test fixture drops and recreates `stock_items`, so do not point it at a development or production database.
+
+Example, after creating a separate `inventory_test_db` database:
+
+```bash
+INVENTORY_TEST_POSTGRES_URL='postgresql+asyncpg://admin:admin@localhost:5433/inventory_test_db' \
+  pytest -q tests/test_stock_repository.py
+```
 
 ## JWT configuration
 

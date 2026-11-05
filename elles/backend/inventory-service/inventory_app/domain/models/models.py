@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional, Sequence
 from uuid import UUID
 
-from inventory_app.domain.exceptions import InvalidAdjustmentError
+from inventory_app.domain.exceptions import InvalidAdjustmentError, InvalidStockStateError
 
 
 class MovementReason(str, Enum):
@@ -49,7 +49,15 @@ class StockItem:
     sku: str
     on_hand: int
     reserved: int
-    updated_at: datetime
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self) -> None:
+        if not self.sku.strip():
+            raise InvalidStockStateError("SKU cannot be empty.")
+        if self.on_hand < 0:
+            raise InvalidStockStateError("On-hand quantity cannot be negative.")
+        if self.reserved < 0 or self.reserved > self.on_hand:
+            raise InvalidStockStateError("Reserved quantity must be between zero and on-hand quantity.")
 
     @property
     def available(self) -> int:
