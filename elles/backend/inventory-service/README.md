@@ -1,6 +1,6 @@
 # Inventory service
 
-This service provides the inventory API skeleton, a health endpoint, JWT authentication and role checks, and foundational stock item persistence. Stock adjustments, movement ledger APIs, and reservations are tracked in later inventory milestones.
+This service provides a health endpoint, JWT-protected stock receipt adjustments, and PostgreSQL persistence for inventory quantities. Movement ledger APIs and reservations are tracked in later inventory milestones.
 
 ## Run the service
 
@@ -26,11 +26,50 @@ Only one process can listen on port `8003` at a time. Stop the Compose service b
 | Method | Path | Authorization | Purpose |
 | --- | --- | --- | --- |
 | `GET` | `/health` | None | Returns the service health response. |
-| `GET` | `/api/v1/auth-check/whoami` | Any valid access token | Returns the token subject and normalized roles. |
-| `GET` | `/api/v1/auth-check/admin` | `admin` role | Checks an admin-only route. |
-| `GET` | `/api/v1/auth-check/admin-or-service` | `admin` or `service` role | Checks a route available to admins and services. |
+| `POST` | `/api/v1/stock/{sku}/adjustment` | `admin` role | Receives or returns stock for a SKU. |
 
-`/health` checks PostgreSQL and returns `503 Service Unavailable` if the database cannot answer. The three `/auth-check` routes are temporary authorization checks. They return `401 Unauthorized` when the bearer token is missing or invalid, and role-restricted routes return `403 Forbidden` when the token is valid but lacks an allowed role.
+`/health` checks PostgreSQL and returns `503 Service Unavailable` if the database cannot answer. The stock endpoint returns `401 Unauthorized` when the bearer token is missing or invalid, and `403 Forbidden` when the token is valid but lacks the admin role.
+
+## Receive stock
+
+An admin can record a received or returned quantity. The `delta` must be a positive integer. A receipt for a SKU that does not exist creates that SKU; later receipts increment its `on_hand` quantity. The response includes `on_hand`, `reserved`, and computed `available` quantities.
+
+The currently registered Swagger route is singular: `POST /api/v1/stock/{sku}/adjustment`. The FRE-8 issue specifies `/stock/{sku}/adjustments` (plural); align the implementation and this documented path before closing that issue.
+
+Example request:
+
+```json
+{
+  "delta": 7,
+  "reason": "received",
+  "note": "Initial delivery"
+}
+```
+
+`reason` must be `received` or `returned`; `note` is optional. A successful request returns `201 Created`, for example:
+
+```json
+{
+  "sku": "SKU-001",
+  "on_hand": 7,
+  "reserved": 0,
+  "available": 7
+}
+```
+
+Invalid request bodies, including a non-positive delta or unsupported reason, return `422 Unprocessable Entity`.
+
+### Concurrent first receipts
+
+The first-receipt concurrency check sends 30 simultaneous requests with `delta: 1` to a newly generated SKU. The recorded run returned `201` for all 30 requests, had no request errors, and the largest returned `on_hand` was 30.
+
+With the inventory service running and `INVENTORY_TOKEN` set to a valid admin access token, run this from the inventory-service directory using the active virtual environment:
+
+```bash
+python tests/test_concurrent_receipts.py
+```
+
+The script creates a unique test SKU and leaves it in the database. Run it against a development or test database, not production.
 
 ## Database connection and migrations
 
@@ -77,11 +116,13 @@ Inventory verifies tokens with `PyJWT`, using `JWT_SECRET_KEY` and `JWT_ALGORITH
 
 Tokens must include `exp` and `sub`; `sub` must be a UUID. Role checks read `role` or `roles` and compare values in lowercase. Use the `access_token` returned by identity login, not the refresh token. Log in again after rotating the shared secret because tokens signed with the previous secret will fail verification.
 
-Example request:
+Example stock receipt request:
 
 ```bash
-curl -i http://localhost:8003/api/v1/auth-check/whoami \
-  -H "Authorization: Bearer $TOKEN"
+curl -i -X POST http://localhost:8003/api/v1/stock/SKU-001/adjustment \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"delta": 7, "reason": "received"}'
 ```
 
-For Postman, choose **Bearer Token** authorization and paste only the `access_token` value.
+For Postman, choose **Bearer Token** authorization and paste only the `access_token` value returned by identity login.
