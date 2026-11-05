@@ -30,7 +30,22 @@ Only one process can listen on port `8003` at a time. Stop the Compose service b
 | `GET` | `/api/v1/auth-check/admin` | `admin` role | Checks an admin-only route. |
 | `GET` | `/api/v1/auth-check/admin-or-service` | `admin` or `service` role | Checks a route available to admins and services. |
 
-The three `/auth-check` routes are temporary authorization checks. They return `401 Unauthorized` when the bearer token is missing or invalid, and role-restricted routes return `403 Forbidden` when the token is valid but lacks an allowed role.
+`/health` checks PostgreSQL and returns `503 Service Unavailable` if the database cannot answer. The three `/auth-check` routes are temporary authorization checks. They return `401 Unauthorized` when the bearer token is missing or invalid, and role-restricted routes return `403 Forbidden` when the token is valid but lacks an allowed role.
+
+## Database connection and migrations
+
+`POSTGRES_URL` uses SQLAlchemy's async driver format. For a local service process, the default is `postgresql+asyncpg://admin:admin@localhost:5433/inventory_db`; set it in the service `.env` if your PostgreSQL port or credentials differ. Docker Compose supplies the internal URL `postgresql+asyncpg://admin:admin@postgres-inventory:5432/inventory_db`.
+
+The async engine and session factory live in `inventory_app/infrastructure/persistence/postgres/database.py`. Database availability is checked during startup and by `/health`; the engine is disposed during shutdown.
+
+Run migrations from the inventory service directory with the project virtual environment active:
+
+```bash
+alembic upgrade head
+alembic downgrade base
+```
+
+The initial revision is intentionally empty. `upgrade head` records the Alembic baseline in `alembic_version`; inventory tables will be introduced by a later migration.
 
 ## JWT configuration
 

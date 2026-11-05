@@ -1,22 +1,76 @@
 services:
-  postgres:
+  # --- DATABASES ---
+  postgres-order:
     image: postgres:15-alpine
+    container_name: postgres_order
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
+      POSTGRES_DB: order_db
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - postgres_order_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d order_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-inventory:
+    image: postgres:15-alpine
+    container_name: postgres_inventory
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: inventory_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_inventory_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d inventory_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-identity:
+    image: postgres:15-alpine
+    container_name: postgres_identity
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: identity_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_identity_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d identity_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres-payment:
+    image: postgres:15-alpine
+    container_name: postgres_payment
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: payment_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_payment_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d payment_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   mongodb:
     image: mongo:7.0
+    container_name: mongodb
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin
@@ -34,6 +88,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: admin
@@ -50,6 +105,7 @@ services:
 
   localstack:
     image: localstack/localstack:latest
+    container_name: localstack
     ports:
       - "4566:4566"
     environment:
@@ -59,11 +115,13 @@ services:
     volumes:
       - localstack_data:/var/lib/localstack
 
+  # --- SERVICES ---
   catalog-service:
     build: ../backend/catalog-service
     ports:
       - "8001:8000"
     environment:
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       ENVIRONMENT: local
       MONGO_URL: mongodb://admin:admin@mongodb:27017/?authSource=admin
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
@@ -80,11 +138,11 @@ services:
       - "8002:8000"
     environment:
       ENVIRONMENT: local
-      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/order_db
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres-order:5432/order_db
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
       AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
-      postgres:
+      postgres-order:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -96,11 +154,11 @@ services:
     environment:
       ENVIRONMENT: local
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/inventory_db
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres-inventory:5432/inventory_db
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
       AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
-      postgres:
+      postgres-inventory:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -110,13 +168,13 @@ services:
     ports:
       - "8004:8000"
     environment:
-      ENVIRONMENT: local
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/identity_db
+      ENVIRONMENT: local
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres-identity:5432/identity_db
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
       AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
-      postgres:
+      postgres-identity:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -127,11 +185,11 @@ services:
       - "8005:8000"
     environment:
       ENVIRONMENT: local
-      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/payment_db
+      POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres-payment:5432/payment_db
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
       AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
-      postgres:
+      postgres-payment:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -152,7 +210,10 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
+  postgres_order_data:
+  postgres_inventory_data:
+  postgres_identity_data:
+  postgres_payment_data:
   mongo_data:
   rabbitmq_data:
   localstack_data:
