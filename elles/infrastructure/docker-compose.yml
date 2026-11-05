@@ -95,6 +95,7 @@ services:
       - "8003:8000"
     environment:
       ENVIRONMENT: local
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/inventory_db
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
       AWS_ENDPOINT_URL: http://localstack:4566
@@ -110,6 +111,7 @@ services:
       - "8004:8000"
     environment:
       ENVIRONMENT: local
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       POSTGRES_URL: postgresql+asyncpg://admin:admin@postgres:5432/identity_db
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672/
       AWS_ENDPOINT_URL: http://localstack:4566
